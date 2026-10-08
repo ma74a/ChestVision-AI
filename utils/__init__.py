@@ -1,1 +1,1 @@
-from .visualize import visualize_data
+from .visualize import visualize_data, show_batch
