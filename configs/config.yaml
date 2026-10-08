@@ -11,6 +11,22 @@ model:
   embed_dim: 256
   dff_scale_factor: 4
   num_heads: 8
+  classes: [
+    "Atelectasis",
+    "Cardiomegaly",
+    "Consolidation",
+    "Edema",
+    "Effusion",
+    "Emphysema",
+    "Fibrosis",
+    "Hernia",
+    "Infiltration",
+    "Mass",
+    "Nodule",
+    "Pleural_Thickening",
+    "Pneumonia",
+    "Pneumothorax",
+  ]
 
   # dropout
   input_dropout_rate: 0.1
