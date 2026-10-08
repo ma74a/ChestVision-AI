@@ -36,9 +36,12 @@ model:
 train:
   batch_size: 32
   epochs: 100
-  csv_file: /home/etman/etman/ChestVision-AI/data/Data_Entry_2017.csv
-  train_val_file: /home/etman/etman/ChestVision-AI/data/train_val_list_NIH.txt
-  images_dir: /home/etman/etman/ChestVision-AI/data/images_dir
+  csv_file: "/home/etman/etman/ChestVision-AI/data/Data_Entry_2017_2000.csv"
+  train_val_file: "/home/etman/etman/ChestVision-AI/data/train_val_list_NIH_2000.txt"
+  images_dir: "/home/etman/etman/ChestVision-AI/data/images_dir"
+  # csv_file: /home/etman/etman/ChestVision-AI/data/Data_Entry_2017.csv
+  # train_val_file: /home/etman/etman/ChestVision-AI/data/train_val_list_NIH.txt
+  # images_dir: /home/etman/etman/ChestVision-AI/data/images_dir
 
 optimizer:
   lr: 3e-4
