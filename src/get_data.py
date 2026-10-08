@@ -1,11 +1,12 @@
 from torch.utils.data import DataLoader
+from torchvision import transforms as T
 from sklearn.model_selection import train_test_split
 import pandas as pd
 import yaml
+from typing import Tuple
 
 from dataset import ChestXRayDataset
 
-from torchvision import transforms as T
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -23,7 +24,7 @@ val_transform = T.Compose([
     T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
 ])
 
-def split_load_data(cfg):
+def split_load_data(cfg) -> Tuple[DataLoader, DataLoader]:
     # we will split according to patient id
     # not using random_split
     # becuase there are more that one patient has more than one image
@@ -84,7 +85,7 @@ def split_load_data(cfg):
             shuffle=False
     )
     
-    return train_loader, val_loader
+    return train_dataset, val_dataset, train_loader, val_loader
     
 if __name__ == "__main__":
     with open("/home/etman/etman/ChestVision-AI/configs/config.yaml", 'r') as f:
