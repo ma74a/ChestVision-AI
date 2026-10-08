@@ -1,0 +1,25 @@
+[project]
+name = "chestvision-ai"
+version = "0.1.0"
+description = "AI-powered chest X-ray analysis"
+readme = "README.md"
+authors = [
+    { name = "mahmoud etman", email = "metman835@gmail.com" }
+]
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "matplotlib>=3.10.9",
+    "numpy>=2.2.6",
+    "pandas>=2.3.3",
+    "scikit-learn>=1.7.2",
+    "torch>=2.14.1",
+    "torchvision>=0.29.1",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
