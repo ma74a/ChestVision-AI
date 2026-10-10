@@ -1,3 +1,6 @@
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from torch.utils.data import DataLoader
 from torchvision import transforms as T
 from sklearn.model_selection import train_test_split
@@ -6,6 +9,7 @@ import yaml
 from typing import Tuple
 
 from dataset import ChestXRayDataset
+from utils import show_batch, visualize_data
 
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -66,29 +70,37 @@ def split_load_data(cfg) -> Tuple[DataLoader, DataLoader]:
     train_dataset = ChestXRayDataset(
         images_dir=cfg["train"]["images_dir"],
         df=df_train,
-        transforms=train_transform
+        transforms=train_transform,
+        cfg=cfg
     )
     val_dataset = ChestXRayDataset(
         images_dir=cfg["train"]["images_dir"],
         df=df_val,
-        transforms=val_transform
+        transforms=val_transform,
+        cfg=cfg
     )
+
     
     train_loader = DataLoader(
         dataset=train_dataset,
         batch_size=cfg["train"]["batch_size"],
         shuffle=True
     )
+    # first_batch = next(iter(train_loader))
+    # images, labels = first_batch
+    # print(images.shape, labels.shape)
     val_loader = DataLoader(
             dataset=val_dataset,
             batch_size=cfg["train"]["batch_size"],
             shuffle=False
     )
     
+    # show_batch(loader=train_loader, classes=cfg["model"]["classes"])
+    
     return train_dataset, val_dataset, train_loader, val_loader
     
-if __name__ == "__main__":
-    with open("/home/etman/etman/ChestVision-AI/configs/config.yaml", 'r') as f:
-        config = yaml.safe_load(f)
+# if __name__ == "__main__":
+#     with open("/home/etman/etman/ChestVision-AI/configs/config.yaml", 'r') as f:
+#         config = yaml.safe_load(f)
         
-    split_load_data(cfg=config)
+#     split_load_data(cfg=config)
