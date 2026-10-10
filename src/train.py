@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch import optim
 from torchinfo import summary
 
+from sklearn.metrics import roc_auc_score
 import logging
 from omegaconf import OmegaConf, DictConfig
 import hydra
@@ -40,7 +41,7 @@ def saving_training_plots(history_df, lr, output_dir):
         
     """
     plt.style.use("seaborn-v0_8-whitegrid")
-    fig, ax = plt.subplots(1,3, figsize=(15,5))
+    fig, ax = plt.subplots(1,4, figsize=(20,5))
     ax[0].plot(history_df["train loss"], label="Train Loss")
     ax[0].plot(history_df["val loss"], label="Validation Loss")
     ax[0].set_title("Loss Curves")
@@ -57,6 +58,11 @@ def saving_training_plots(history_df, lr, output_dir):
     ax[2].set_title("Learning Rate Curve")
     ax[2].set_xlabel("steps")
     ax[2].legend()
+    
+    ax[3].plot(history_df["val auc"], label="Validation AUROC")
+    ax[3].set_title("Validation Macro AUROC")
+    ax[3].set_xlabel("Epoch")
+    ax[3].legend()
 
     plot_path = os.path.join(output_dir, "training_curves.png")
     fig.savefig(plot_path)
@@ -114,22 +120,57 @@ def main_train(cfg: DictConfig):
         # y_pred: [B, 14] — raw logits
         # y_true: [B, 14] — binary labels
         probs = torch.sigmoid(y_pred)
-        preds = (probs >= 0.7).float()
+        preds = (probs >= 0.5).float()
         
         correct = (preds == y_true).sum().item()
         # numel returns the total nums in y_true
         total = y_true.numel()
 
         return correct / total
+    
+
+    def macro_auroc(
+        y_pred: torch.Tensor,
+        y_true: torch.Tensor,
+    ) -> float:
+        """
+        Calculate macro-averaged AUROC for multi-label classification.
+
+        Args:
+            y_pred: Raw logits, shape [B, num_classes].
+            y_true: Binary labels, shape [B, num_classes].
+
+        Returns:
+            Mean AUROC across classes with both positive and
+            negative examples in the evaluated data.
+        """
+        probs = torch.sigmoid(y_pred).detach().cpu().numpy()
+        targets = y_true.detach().cpu().numpy()
+
+        class_aucs = []
+
+        for i in range(targets.shape[1]):
+            # AUROC is undefined if a class has only one label value.
+            if len(set(targets[:, i])) < 2:
+                continue
+
+            auc = roc_auc_score(targets[:, i], probs[:, i])
+            class_aucs.append(auc)
+
+        if not class_aucs:
+            return float("nan")
+
+        return sum(class_aucs) / len(class_aucs)
+
 
     
-    optimizer = torch.optim.AdamW(
+    optimizer = optim.AdamW(
         dense_model.parameters(),
         lr=1e-4,
         weight_decay=1e-4,
     )
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
         T_max=20,
         eta_min=1e-6,
@@ -144,7 +185,8 @@ def main_train(cfg: DictConfig):
     learning_rates = []
     n_trains = len(train_loader)
     n_vals = len(val_loader)
-    best_val_acc = 0
+    best_val_auc = 0.0
+    val_aucs = []
     for epoch in range(cfg["train"]["epochs"]):
         train_loss_avg = 0
         train_acc_avg = 0
@@ -174,6 +216,7 @@ def main_train(cfg: DictConfig):
         
         val_loss_avg = 0
         val_acc_avg = 0
+        all_logits, all_labels = [], []
         dense_model.eval()
         with torch.inference_mode():
             for images, labels in tqdm(val_loader):
@@ -185,38 +228,43 @@ def main_train(cfg: DictConfig):
                 val_loss_avg += loss.item()
                 val_acc_avg += accuracy_fn(val_logits, labels)
                 
+                all_logits.append(val_logits.cpu())
+                all_labels.append(labels.cpu())
+                
             epoch_val_avg_loss = val_loss_avg / n_vals
             epoch_val_avg_acc = val_acc_avg / n_vals
             val_losses.append(epoch_val_avg_loss)
             val_acces.append(epoch_val_avg_acc)
+            epoch_val_auc = macro_auroc(torch.cat(all_logits), torch.cat(all_labels))
+            val_aucs.append(epoch_val_auc)
             
             print(
                 f"Epoch {epoch+1} | "
                 f"train_loss: {epoch_train_avg_loss:.4f} | train_accuracy: {epoch_train_avg_acc:.4f} | "
                 f"val_loss: {epoch_val_avg_loss:.4f} | val_accuracy: {epoch_val_avg_acc:.4f} | "
-                f"LR: {scheduler.get_last_lr()[0]:.6f}"
+                f"LR: {scheduler.get_last_lr()[0]:.6f} | val_auc: {epoch_val_auc:.4f}"
             )
             
             log.info(f"Epoch {epoch+1} | "
                 f"train_loss: {epoch_train_avg_loss:.4f} | train_accuracy: {epoch_train_avg_acc:.4f} | "
                 f"val_loss: {epoch_val_avg_loss:.4f} | val_accuracy: {epoch_val_avg_acc:.4f} | "
-                f"LR: {scheduler.get_last_lr()[0]:.6f}"
+                f"LR: {scheduler.get_last_lr()[0]:.6f} | val_auc: {epoch_val_auc:.4f}"
             )
             
-            # storing the model with best val
-            if best_val_acc > epoch_val_avg_loss:
-                best_val_acc = epoch_val_avg_loss
+            # save best model by AUROC
+            if epoch_val_auc > best_val_auc:
+                best_val_auc = epoch_val_auc
                 model_path = os.path.join(output_dir, "best_dense_model.pt")
                 torch.save(dense_model.state_dict(), model_path)
-                log.info(f"New best model saved to {model_path} , with accuracy : {best_val_acc}")
+                log.info(f"New best model saved to {model_path} , with accuracy : {best_val_auc}")
                 
                 
     learning_rates.append(scheduler.get_last_lr()[0])
 
     log.info("Storing the training artifacts detials")
 
-    data = list(zip(train_losses,train_acces,val_losses,val_acces))
-    df = pd.DataFrame(data,columns=['train loss','train acc','val loss','val acc'])
+    data = list(zip(train_losses,train_acces,val_losses,val_acces, val_aucs))
+    df = pd.DataFrame(data,columns=['train loss','train acc','val loss','val acc', "val auc"])
     
     csv_path = os.path.join(output_dir, "training_history.csv")
     df.to_csv(csv_path,index_label="epoch")
