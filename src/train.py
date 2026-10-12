@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 
 from get_data import split_load_data
 from cnn import DenseNet121
+from vit import ViTClassifier
 
 
 log = logging.getLogger(__name__)
@@ -67,7 +68,16 @@ def saving_training_plots(history_df, lr, output_dir):
     plot_path = os.path.join(output_dir, "training_curves.png")
     fig.savefig(plot_path)
     log.info(f"Saved training plot to {plot_path}")
-    
+
+
+def build_model(cfg):
+    n = cfg["model"]["num_classes"]
+    if cfg["model"]["cnn_name"] == "densenet121":
+        return DenseNet121(n)
+    if cfg["model"]["vit_name"] == "vit_small":
+        return ViTClassifier(n)
+    raise ValueError(cfg["model"]["name"])
+
 @hydra.main(config_path="../configs", config_name="config", version_base=None)
 def main_train(cfg: DictConfig):
     # print and log the active config and the Hydra output directory:
@@ -103,16 +113,22 @@ def main_train(cfg: DictConfig):
     log.info(f"Mapping saved at : {mapping_save_path}")
     
     log.info("Model Creation Begin")
-    dense_model = DenseNet121(num_classes=cfg["model"]["num_classes"]).to(device)
+    model = build_model(cfg=cfg)
+    if isinstance(model, DenseNet121):
+        model = DenseNet121(num_classes=cfg["model"]["num_classes"]).to(device)
+    if isinstance(model, ViTClassifier):
+        model = ViTClassifier(
+            num_classes=cfg["model"]["num_classes"],
+        )
     test_input = torch.randn(
         cfg["train"]["batch_size"],
         cfg["model"]["in_channels"],
         cfg["model"]["img_size"],
         cfg["model"]["img_size"]
-    )
+    ).to(device=device)
     
     log.info("--- Model Summary ---")
-    log.info(summary(dense_model, input_data=test_input))
+    log.info(str(summary(model, input_data=test_input, device=device, verbose=0)))
     log.info("--------------------")
     
     # get accuracy
@@ -165,14 +181,15 @@ def main_train(cfg: DictConfig):
 
     
     optimizer = optim.AdamW(
-        dense_model.parameters(),
+        model.parameters(),
         lr=1e-4,
         weight_decay=1e-4,
     )
 
+    T_max = cfg["train"]["epochs"] * len(train_loader)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
-        T_max=20,
+        T_max=T_max,
         eta_min=1e-6,
     )
     criterion = nn.BCEWithLogitsLoss()
@@ -190,72 +207,73 @@ def main_train(cfg: DictConfig):
     for epoch in range(cfg["train"]["epochs"]):
         train_loss_avg = 0
         train_acc_avg = 0
-        dense_model.train()
+        model.train()
         for images, labels in tqdm(train_loader):
             images, labels = images.to(device), labels.to(device)
             
             optimizer.zero_grad()
             learning_rates.append(scheduler.get_last_lr()[0])
             
-            train_logits = dense_model(images)
+            train_logits = model(images)
             # print(f"train_logits shape -> : {train_logits.shape}")
             # print(f"labels shape -> : {labels.shape}")
             loss = criterion(train_logits, labels)
             
             loss.backward()
             optimizer.step()
-            scheduler.step()
             
             train_loss_avg += loss.item()
-            train_acc_avg += accuracy_fn(train_logits, labels)
+            # train_acc_avg += accuracy_fn(train_logits, labels)
+            
+        scheduler.step()
             
         epoch_train_avg_loss = train_loss_avg / n_trains
-        epoch_train_avg_acc = train_acc_avg / n_trains
+        # epoch_train_avg_acc = train_acc_avg / n_trains
         train_losses.append(epoch_train_avg_loss)
-        train_acces.append(epoch_train_avg_acc)
+        # train_acces.append(epoch_train_avg_acc)
         
         val_loss_avg = 0
         val_acc_avg = 0
         all_logits, all_labels = [], []
-        dense_model.eval()
+        model.eval()
         with torch.inference_mode():
             for images, labels in tqdm(val_loader):
                 images, labels = images.to(device), labels.to(device)
                 
-                val_logits = dense_model(images)
+                val_logits = model(images)
                 loss = criterion(val_logits, labels)
                 
                 val_loss_avg += loss.item()
-                val_acc_avg += accuracy_fn(val_logits, labels)
+                # val_acc_avg += accuracy_fn(val_logits, labels)
                 
                 all_logits.append(val_logits.cpu())
                 all_labels.append(labels.cpu())
                 
             epoch_val_avg_loss = val_loss_avg / n_vals
-            epoch_val_avg_acc = val_acc_avg / n_vals
+            # epoch_val_avg_acc = val_acc_avg / n_vals
             val_losses.append(epoch_val_avg_loss)
-            val_acces.append(epoch_val_avg_acc)
+            # val_acces.append(epoch_val_avg_acc)
             epoch_val_auc = macro_auroc(torch.cat(all_logits), torch.cat(all_labels))
             val_aucs.append(epoch_val_auc)
             
             print(
                 f"Epoch {epoch+1} | "
-                f"train_loss: {epoch_train_avg_loss:.4f} | train_accuracy: {epoch_train_avg_acc:.4f} | "
-                f"val_loss: {epoch_val_avg_loss:.4f} | val_accuracy: {epoch_val_avg_acc:.4f} | "
+                f"train_loss: {epoch_train_avg_loss:.4f} |"
+                f"val_loss: {epoch_val_avg_loss:.4f} | "
                 f"LR: {scheduler.get_last_lr()[0]:.6f} | val_auc: {epoch_val_auc:.4f}"
             )
             
             log.info(f"Epoch {epoch+1} | "
-                f"train_loss: {epoch_train_avg_loss:.4f} | train_accuracy: {epoch_train_avg_acc:.4f} | "
-                f"val_loss: {epoch_val_avg_loss:.4f} | val_accuracy: {epoch_val_avg_acc:.4f} | "
+                f"train_loss: {epoch_train_avg_loss:.4f}"
+                f"val_loss: {epoch_val_avg_loss:.4f} | "
                 f"LR: {scheduler.get_last_lr()[0]:.6f} | val_auc: {epoch_val_auc:.4f}"
             )
             
             # save best model by AUROC
             if epoch_val_auc > best_val_auc:
                 best_val_auc = epoch_val_auc
-                model_path = os.path.join(output_dir, "best_dense_model.pt")
-                torch.save(dense_model.state_dict(), model_path)
+                model_path = os.path.join(output_dir, "best_model.pt")
+                torch.save(model.state_dict(), model_path)
                 log.info(f"New best model saved to {model_path} , with accuracy : {best_val_auc}")
                 
                 
