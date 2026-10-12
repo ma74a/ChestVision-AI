@@ -97,18 +97,13 @@ def main_train(cfg: DictConfig):
     
     log.info("Model Creation Begin")
     model = build_model(cfg=cfg)
-    if isinstance(model, DenseNet121):
-        model = DenseNet121(num_classes=cfg["model"]["num_classes"]).to(device)
-    if isinstance(model, ViTClassifier):
-        model = ViTClassifier(
-            num_classes=cfg["model"]["num_classes"],
-        )
     test_input = torch.randn(
         cfg["train"]["batch_size"],
         cfg["model"]["in_channels"],
         cfg["model"]["img_size"],
-        cfg["model"]["img_size"]
-    ).to(device=device)
+        cfg["model"]["img_size"],
+        device=device,
+    )
     
     log.info("--- Model Summary ---")
     log.info(str(summary(model, input_data=test_input, device=device, verbose=0)))
