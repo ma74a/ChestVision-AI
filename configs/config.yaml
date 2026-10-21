@@ -27,6 +27,8 @@ model:
     "Pneumonia",
     "Pneumothorax",
   ]
+  cnn_name: "densenet121"
+  vit_name: "vit_small"
 
   # dropout
   input_dropout_rate: 0.1
@@ -35,7 +37,7 @@ model:
 
 train:
   batch_size: 32
-  epochs: 100
+  epochs: 1
   csv_file: "/home/etman/etman/ChestVision-AI/data/Data_Entry_2017_2000.csv"
   train_val_file: "/home/etman/etman/ChestVision-AI/data/train_val_list_NIH_2000.txt"
   images_dir: "/home/etman/etman/ChestVision-AI/data/images_dir"
@@ -44,7 +46,7 @@ train:
   # images_dir: /home/etman/etman/ChestVision-AI/data/images_dir
 
 optimizer:
-  lr: 3e-4
-  weight_decay : 0.1
+  lr: 1e-3
+  weight_decay : 0.01
   beta1 : 0.9   # controls moving average of gradients
   beta2 : 0.999 #  controls moving average of squared gradients
